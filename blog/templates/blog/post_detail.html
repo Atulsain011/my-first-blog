@@ -1,20 +1,279 @@
 {% extends 'blog/base.html' %}
 
 {% block content %}
-    <article class="post">
-        <aside class="actions">
-            {% if user.is_authenticated %}
-                <a class="btn btn-secondary" href="{% url 'post_edit' pk=post.pk %}">
-                    {% include './icons/pencil-fill.svg' %}
-                </a>
-            {% endif %}
-        </aside>
-        {% if post.published_date %}
-            <time class="date">
-                {{ post.published_date }}
-            </time>
-        {% endif %}
-        <h2>{{ post.title }}</h2>
-        <p>{{ post.text|linebreaksbr }}</p>
-    </article>
+    <div id="post-detail-container" 
+         data-post-id="{{ post.id }}" 
+         data-post-slug="{{ post.slug }}" 
+         data-is-authenticated="{% if user.is_authenticated %}true{% else %}false{% endif %}" 
+         data-current-user="{{ user.username }}">
+        <p class="text-muted">Loading post details...</p>
+    </div>
+
+    <!-- We keep a hidden CSRF input to fetch the token in JS -->
+    {% csrf_token %}
+
+    <script>
+        async function loadPostDetail() {
+            const container = document.getElementById('post-detail-container');
+            const postId = container.getAttribute('data-post-id');
+            const postSlug = container.getAttribute('data-post-slug');
+            const isAuthenticated = container.getAttribute('data-is-authenticated') === 'true';
+            const currentUser = container.getAttribute('data-current-user');
+            
+            try {
+                const response = await fetch(`/api/posts/${postId}/`);
+                if (!response.ok) throw new Error('Failed to fetch post details');
+                const post = await response.json();
+                
+                // Clear loading state
+                container.innerHTML = '';
+                
+                const article = document.createElement('article');
+                article.className = 'post';
+                
+                // Edit button actions if author
+                let editBtnHtml = '';
+                if (isAuthenticated && currentUser === post.author) {
+                    editBtnHtml = `
+                        <aside class="actions">
+                            <a class="btn btn-secondary" href="/blog/${post.slug}/edit/">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-pencil-fill" viewBox="0 0 16 16">
+                                  <path d="M12.854.146a.5.5 0 0 0-.707 0L10.5 1.793 14.207 5.5l1.647-1.646a.5.5 0 0 0 0-.708zm.646 6.061L9.793 2.5 3.293 9H3.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.207zm-7.468 7.468A.5.5 0 0 1 6 13.5V13h-.5a.5.5 0 0 1-.5-.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.5-.5V10h-.5a.5.5 0 0 1-.175-.032l-.179.178a.5.5 0 0 0-.11.168l-2 5a.5.5 0 0 0 .65.65l5-2a.5.5 0 0 0 .168-.11z"/>
+                                </svg>
+                            </a>
+                        </aside>
+                    `;
+                }
+                
+                // Image HTML
+                let imageHtml = '';
+                if (post.image_url) {
+                    imageHtml = `
+                        <img src="${post.image_url}"
+                             style="max-width: 800px; height: 400px; object-fit: cover; border-radius: 10px; margin-bottom: 20px; display: block; width: 100%;">
+                    `;
+                }
+                
+                // Category HTML
+                let categoryHtml = '';
+                if (post.category) {
+                    categoryHtml = `
+                        <p>
+                            <strong>Category:</strong> 
+                            ${post.category.name}
+                        </p>
+                    `;
+                }
+                
+                // Tags HTML
+                let tagsHtml = '';
+                if (post.tags && post.tags.length > 0) {
+                    const tagsList = post.tags.map(tag => `
+                        <span class="Tags">${tag.name}</span>
+                    `).join(' ');
+                    tagsHtml = `
+                        <p>
+                            <strong>Tags:</strong>
+                            ${tagsList}
+                        </p>
+                    `;
+                }
+                
+                // Published date
+                let dateHtml = '';
+                if (post.published_date) {
+                    const date = new Date(post.published_date);
+                    dateHtml = `
+                        <time class="date">
+                            ${date.toLocaleString()}
+                        </time>
+                    `;
+                }
+                
+                // Text formatting
+                const formattedText = post.text ? post.text.replace(/\n/g, '<br>') : '';
+                
+                // Comment Form Section
+                let commentFormHtml = '';
+                if (isAuthenticated) {
+                    commentFormHtml = `
+                        <form id="main-comment-form">
+                            <textarea
+                                name="text"
+                                rows="3"
+                                style="width:100%; border:1px solid #ccc; border-radius:8px; padding:10px;"
+                                placeholder="Write your comment..."
+                                required></textarea>
+                            <button type="submit" style="margin-top: 10px;">Post Comment</button>
+                        </form>
+                    `;
+                } else {
+                    commentFormHtml = `
+                        <textarea
+                            name="text"
+                            rows="3"
+                            style="width:100%; border:1px solid #ccc; border-radius:8px; padding:10px;"
+                            placeholder="Comment..."
+                            required></textarea>
+                        <button type="button" style="margin-top: 10px;" onclick="alert('Please login First to comment...........')">
+                            Post Comment
+                        </button>
+                    `;
+                }
+                
+                // Comments list construction
+                const commentsCount = post.comments ? post.comments.length : 0;
+                let commentsHtml = `<h3>Comments (${commentsCount})</h3>`;
+                
+                if (commentsCount === 0) {
+                    commentsHtml += '<p>No comments yet. Be the first to comment!</p>';
+                } else {
+                    post.comments.forEach(comment => {
+                        const commentDate = new Date(comment.created_date).toLocaleString();
+                        
+                        let replyButtonHtml = '';
+                        if (isAuthenticated) {
+                            replyButtonHtml = `
+                                <a href="#" onclick="toggleReplyForm(${comment.id}); return false;">
+                                   Reply
+                                </a>
+                            `;
+                        } else {
+                            replyButtonHtml = `
+                                <a href="#" onclick="alert('Please login First to reply'); return false;">
+                                   Reply
+                                </a>
+                            `;
+                        }
+                        
+                        // Replies HTML
+                        let repliesListHtml = '';
+                        if (comment.replies && comment.replies.length > 0) {
+                            comment.replies.forEach(reply => {
+                                const replyDate = new Date(reply.created_date).toLocaleString();
+                                repliesListHtml += `
+                                    <div style="margin-left:50px; margin-top:10px; padding:10px; border-left:4px solid #C25100; background:#f8f8f8; border-radius:5px;">
+                                        ↳ <strong>${reply.author}</strong>
+                                        <small style="color:gray; margin-left: 10px;">${replyDate}</small>
+                                        <p style="margin-top: 5px; margin-bottom: 0;">${reply.text}</p>
+                                    </div>
+                                `;
+                            });
+                        }
+                        
+                        // Form for replying
+                        let replyFormHtml = '';
+                        if (isAuthenticated) {
+                            replyFormHtml = `
+                                <div id="reply-form-${comment.id}" style="display:none; margin-top:10px; margin-left:30px;">
+                                    <form onsubmit="submitComment(event, ${comment.id})">
+                                        <textarea
+                                            name="text"
+                                            rows="3"
+                                            style="width:100%; border:1px solid #ccc; border-radius:8px; padding:10px;"
+                                            placeholder="Write your reply..."
+                                            required></textarea>
+                                        <button type="submit" style="margin-top: 10px;">Post Reply</button>
+                                    </form>
+                                </div>
+                            `;
+                        }
+                        
+                        commentsHtml += `
+                            <div class="comment-box" style="border:1px solid #ddd; padding:15px; margin-top:15px; border-radius:10px; background:#fafafa;">
+                                <strong>${comment.author}</strong>
+                                <small style="color:gray; margin-left: 10px;">${commentDate}</small>
+                                <p style="margin-top: 10px; margin-bottom: 10px;">${comment.text}</p>
+                                ${replyButtonHtml}
+                                ${replyFormHtml}
+                                ${repliesListHtml}
+                            </div>
+                            <hr>
+                        `;
+                    });
+                }
+                
+                article.innerHTML = `
+                    ${editBtnHtml}
+                    <h2 class="break">${post.title}</h2>
+                    ${imageHtml}
+                    ${dateHtml}
+                    <p style="margin-top: 10px;">By <b>${post.author}</b></p>
+                    ${categoryHtml}
+                    ${tagsHtml}
+                    <p class="break" style="margin-top: 20px; margin-bottom: 30px;">${formattedText}</p>
+                    ${commentFormHtml}
+                    <div id="comments-section" style="margin-top: 30px;">
+                        ${commentsHtml}
+                    </div>
+                `;
+                
+                container.appendChild(article);
+                
+                // Attach submit handler to main form if present
+                const mainForm = document.getElementById('main-comment-form');
+                if (mainForm) {
+                    mainForm.addEventListener('submit', (e) => submitComment(e, null));
+                }
+                
+            } catch (err) {
+                console.error(err);
+                container.innerHTML = '<p class="text-danger">Error loading post details. Please try again.</p>';
+            }
+        }
+        
+        function toggleReplyForm(commentId) {
+            const form = document.getElementById(`reply-form-${commentId}`);
+            if (form) {
+                form.style.display = form.style.display === 'none' ? 'block' : 'none';
+            }
+        }
+        
+        async function submitComment(event, parentId) {
+            event.preventDefault();
+            const form = event.target;
+            const textarea = form.querySelector('textarea');
+            const commentText = textarea.value.trim();
+            if (!commentText) return;
+            
+            const container = document.getElementById('post-detail-container');
+            const postSlug = container.getAttribute('data-post-slug');
+            
+            // Get CSRF Token
+            const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+            
+            const formData = new FormData();
+            formData.append('text', commentText);
+            if (parentId) {
+                formData.append('parent_id', parentId);
+            }
+            formData.append('csrfmiddlewaretoken', csrfToken);
+            
+            try {
+                const response = await fetch(`/blog/${postSlug}/comment/`, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-CSRFToken': csrfToken
+                    }
+                });
+                
+                if (response.ok) {
+                    // Refetch details to render updated comments list
+                    loadPostDetail();
+                } else {
+                    alert('Failed to post comment. Please try again.');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('An error occurred. Please try again.');
+            }
+        }
+        
+        document.addEventListener('DOMContentLoaded', loadPostDetail);
+    </script>
 {% endblock %}
+
+
+
+

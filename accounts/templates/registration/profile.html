@@ -1,0 +1,46 @@
+{% extends "blog/base.html" %}
+
+{% block content %}
+<h1>Profile</h1>
+
+{% if user.image %}
+
+<div style="margin-bottom:20px;">
+    <img src="{{ user.image.url }}"
+         width="150"
+         height="150"
+         style="
+            border-radius:10px;
+            object-fit:cover;
+            border:2px solid #ddd;
+         ">
+{% endif %}
+
+<h3>{{ user.username }}</h3>
+
+<p>Username: {{ user.username }}</p>
+<p>Email: {{ user.email }}</p>
+<p>About: {{ user.about }}</p>
+<p>Date of Birth: {{ user.birth_date }}</p>
+<p>Current Location: {{ user.location }}</p>
+<p>Permanent Address: {{ user.permanent }}</p>
+<p>Phone no: {{ user.pno }}</p>
+<p>Qualification: {{ user.qualification }}</p>
+<p>Gender: {{ user.gender }}</p>
+<a href="{% url 'profile_edit' %}"> Edit Profile </a>
+<h3>My Posts</h3>
+
+{% if my_posts %}
+    <ul>
+        {% for post in my_posts %}
+            <li>
+                <a class="break" href="{% url 'post_detail' slug=post.slug %}">
+                    {{ post.title }}
+                </a>
+            </li>
+        {% endfor %}
+    </ul>
+{% else %}
+    <p>No posts uploaded.</p>
+{% endif %}
+{% endblock %}

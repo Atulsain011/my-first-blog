@@ -1,0 +1,25 @@
+{% extends 'blog/base.html' %}
+
+{% block content %}
+
+<div class="login-container">
+    <div class="login-card">
+        <h2>Create Account</h2>
+
+        <form method="post">
+            {% csrf_token %}
+            {{ form.as_p }}
+
+            <button type="submit" class="btn-login">
+                Sign Up
+            </button>
+        </form>
+
+        <p class="signup-text">
+            Already have an account?
+            <a href="{% url 'login' %}">Login</a>
+        </p>
+    </div>
+</div>
+
+{% endblock %}

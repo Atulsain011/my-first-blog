@@ -1,13 +1,171 @@
 {% extends 'blog/base.html' %}
     {% block content %}
-        {% for post in posts %}
-            <article class="post">
-                <time class="date">
-                    {{ post.published_date }}
-                </time>
-                <h2><a href="{% url 'post_detail' pk=post.pk %}">
-                    {{ post.title }}</a></h2>
-                <p>{{ post.text|linebreaksbr }}</p>
-            </article>
-        {% endfor %}
+        <form method="get" action="{% url 'post_list' %}" class="mb-4" role="search">
+            <div class="input-group">
+                <input
+                    type="search"
+                    name="search"
+                    class="form-control"
+                    placeholder="Search blogs by title, text, author, category or tag"
+                    aria-label="Search blogs">
+                <button class="btn btn-primary" type="submit">Search</button>
+                <a class="btn btn-outline-secondary" id="search-clear-btn" href="{% url 'post_list' %}" style="display: none;">Clear</a>
+            </div>
+        </form>
+
+        <div id="posts-container">
+            <p class="text-muted">Loading blogs...</p>
+        </div>
+
+        <script>
+            async function loadPosts() {
+                const postsContainer = document.getElementById('posts-container');
+                const clearBtn = document.getElementById('search-clear-btn');
+                postsContainer.innerHTML = '<p class="text-muted">Loading blogs...</p>';
+                
+                const path = window.location.pathname;
+                const params = new URLSearchParams(window.location.search);
+                const searchVal = params.get('search') || '';
+                
+                // Build API query URL
+                let apiUrl = '/api/posts/';
+                let filterText = '';
+                
+                if (path.includes('/category/')) {
+                    const parts = path.split('/category/');
+                    const slug = parts[1].replace('/', '');
+                    apiUrl += `?category=${encodeURIComponent(slug)}`;
+                    filterText = `Category: ${slug}`;
+                } else if (path.includes('/tag/')) {
+                    const parts = path.split('/tag/');
+                    const slug = parts[1].replace('/', '');
+                    apiUrl += `?tag=${encodeURIComponent(slug)}`;
+                    filterText = `Tag: ${slug}`;
+                } else if (searchVal) {
+                    apiUrl += `?search=${encodeURIComponent(searchVal)}`;
+                    filterText = `Search: "${searchVal}"`;
+                }
+
+                if (clearBtn) {
+                    clearBtn.style.display = (searchVal || path.includes('/category/') || path.includes('/tag/')) ? 'inline-block' : 'none';
+                }
+                
+                // Pre-fill search input if search value exists
+                const searchInput = document.querySelector('input[name="search"]');
+                if (searchInput) {
+                    searchInput.value = searchVal;
+                }
+                
+                try {
+                    const response = await fetch(apiUrl);
+                    if (!response.ok) throw new Error('Failed to fetch posts');
+                    const posts = await response.json();
+                    
+                    postsContainer.innerHTML = '';
+                    
+                    if (filterText) {
+                        const filterEl = document.createElement('h3');
+                        filterEl.className = 'mb-4';
+                        filterEl.textContent = `Showing posts for ${filterText}`;
+                        postsContainer.appendChild(filterEl);
+                    }
+                    
+                    if (posts.length === 0) {
+                        postsContainer.innerHTML += `<p>No blogs found${filterText ? ' for ' + filterText : ''}.</p>`;
+                        return;
+                    }
+                    
+                    posts.forEach(post => {
+                        const article = document.createElement('article');
+                        article.className = 'post';
+                        
+                        // Published date format
+                        let dateStr = '';
+                        if (post.published_date) {
+                            const date = new Date(post.published_date);
+                            dateStr = date.toLocaleString();
+                        }
+                        
+                        // Category HTML
+                        let categoryHtml = '';
+                        if (post.category) {
+                            categoryHtml = `
+                                <p>
+                                    <strong>Category:</strong> 
+                                    <a href="/blog/category/${post.category.slug}/">${post.category.name}</a>
+                                </p>
+                            `;
+                        }
+                        
+                        // Tags HTML
+                        let tagsHtml = '';
+                        if (post.tags && post.tags.length > 0) {
+                            const tagsList = post.tags.map(tag => `
+                                <span>
+                                    <a href="/blog/tag/${tag.slug}/" class="Tags">${tag.name}</a>
+                                </span>
+                            `).join(' ');
+                            tagsHtml = `
+                                <p>
+                                    <strong>Tags:</strong>
+                                    ${tagsList}
+                                </p>
+                            `;
+                        }
+                        
+                        // Image HTML
+                        let imageHtml = '';
+                        if (post.thumbnail_url) {
+                            imageHtml = `<img src="${post.thumbnail_url}" width="50" style="border-radius: 10px; margin-bottom: 15px; display: block;">`;
+                        }
+                        
+                        // Format body text with line breaks
+                        const formattedText = post.text ? post.text.replace(/\n/g, '<br>') : '';
+                        
+                        article.innerHTML = `
+                            <time class="date">
+                                ${dateStr}
+                            </time>
+                            <h2><a class="break" href="/blog/${post.slug}/">
+                                ${post.title}
+                            </a></h2>
+                            <p>By ${post.author}</p>
+                            ${categoryHtml}
+                            ${tagsHtml}
+                            ${imageHtml}
+                            <p class="break">${formattedText}</p>
+                        `;
+                        postsContainer.appendChild(article);
+                    });
+                } catch (err) {
+                    console.error(err);
+                    postsContainer.innerHTML = '<p class="text-danger">Error loading posts. Please try again.</p>';
+                }
+            }
+            
+            // Intercept search form submission to load posts without reload
+            document.addEventListener('DOMContentLoaded', () => {
+                const searchForm = document.querySelector('form[role="search"]');
+                if (searchForm) {
+                    searchForm.addEventListener('submit', (e) => {
+                        e.preventDefault();
+                        const formData = new FormData(searchForm);
+                        const searchVal = formData.get('search').trim();
+                        
+                        const newUrl = new URL(window.location.href);
+                        // Clean URL to base search url
+                        newUrl.pathname = '/blog/';
+                        if (searchVal) {
+                            newUrl.searchParams.set('search', searchVal);
+                        } else {
+                            newUrl.searchParams.delete('search');
+                        }
+                        window.history.pushState({}, '', newUrl);
+                        loadPosts();
+                    });
+                }
+                
+                loadPosts();
+            });
+        </script>
     {% endblock %}

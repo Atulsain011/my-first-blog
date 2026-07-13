@@ -1,9 +1,107 @@
 {% extends 'blog/base.html' %}
 
 {% block content %}
-    <h2>New post</h2>
-    <form method="POST" class="post-form">{% csrf_token %}
+    <h2>{% if form.instance.pk %}Edit post{% else %}New post{% endif %}</h2>
+
+    <!-- Error message container -->
+    <div id="error-container" class="alert alert-danger" style="display: none; border-radius: 8px;"></div>
+
+    <form method="POST" class="post-form" enctype="multipart/form-data" id="post-edit-form"
+          data-is-edit="{% if form.instance.pk %}true{% else %}false{% endif %}"
+          data-post-id="{% if form.instance.pk %}{{ form.instance.pk }}{% endif %}">
+        {% csrf_token %}
+
         {{ form.as_p }}
-        <button type="submit" class="save btn btn-secondary">Save</button>
+
+        <button type="submit" class="save btn btn-secondary" id="submit-btn">
+            Save
+        </button>
     </form>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const form = document.getElementById('post-edit-form');
+            const errorContainer = document.getElementById('error-container');
+            const submitBtn = document.getElementById('submit-btn');
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                // Reset state
+                errorContainer.style.display = 'none';
+                errorContainer.innerHTML = '';
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Saving...';
+
+                const isEdit = form.getAttribute('data-is-edit') === 'true';
+                const postId = form.getAttribute('data-post-id');
+                
+                let url = '/api/posts/';
+                let method = 'POST';
+
+                if (isEdit && postId) {
+                    url = `/api/posts/${postId}/`;
+                    method = 'PATCH'; // Use PATCH for partial update (cleaner with form-data)
+                }
+
+                // Construct FormData (handles file uploads automatically)
+                const formData = new FormData(form);
+                
+                // Get CSRF Token
+                const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+
+                try {
+                    const response = await fetch(url, {
+                        method: method,
+                        body: formData,
+                        headers: {
+                            'X-CSRFToken': csrfToken
+                        }
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        // Success! Redirect to post detail using slug returned from API
+                        if (data && data.slug) {
+                            window.location.href = `/blog/${data.slug}/`;
+                        } else {
+                            window.location.href = '/blog/';
+                        }
+                    } else {
+                        // Failed. Render validation errors dynamically
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Save';
+                        
+                        let errorHtml = '<strong>Please correct the following errors:</strong><ul>';
+                        if (typeof data === 'object') {
+                            for (const [key, value] of Object.entries(data)) {
+                                if (Array.isArray(value)) {
+                                    value.forEach(err => {
+                                        errorHtml += `<li>${key}: ${err}</li>`;
+                                    });
+                                } else {
+                                    errorHtml += `<li>${key}: ${value}</li>`;
+                                }
+                            }
+                        } else {
+                            errorHtml += `<li>An unexpected error occurred.</li>`;
+                        }
+                        errorHtml += '</ul>';
+                        
+                        errorContainer.innerHTML = errorHtml;
+                        errorContainer.style.display = 'block';
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                } catch (err) {
+                    console.error(err);
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Save';
+                    errorContainer.innerHTML = '<strong>Connection error. Please try again.</strong>';
+                    errorContainer.style.display = 'block';
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+            });
+        });
+    </script>
 {% endblock %}

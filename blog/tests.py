@@ -1,3 +1,214 @@
-from django.test import TestCase
+from django.contrib.auth import get_user_model
+from django.urls import reverse
+from django.utils import timezone
+from rest_framework.test import APITestCase
+from urllib.parse import urlencode
 
-# Create your tests here.
+from .models import Post, Category, Tag
+
+
+class PostAPITests(APITestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username='apiuser',
+            password='strong-pass-123',
+        )
+        self.post = Post.objects.create(
+            author=self.user,
+            title='Initial title',
+            text='Initial content',
+            published_date=timezone.now(),
+        )
+
+    def test_api_root_lists_blog_endpoints(self):
+        response = self.client.get(reverse('api_root'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['posts'].endswith('/api/posts/'))
+        self.assertIn('search', response.data['filters'])
+
+    def test_list_posts(self):
+        url = reverse('api_post_list')
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['title'], 'Initial title')
+
+    def test_list_posts_html(self):
+        url = reverse('api_post_list')
+        response = self.client.get(url, HTTP_ACCEPT='text/html')
+        self.assertEqual(response.status_code, 200)
+
+    def test_create_post_requires_authentication(self):
+        url = reverse('api_post_list')
+        response = self.client.post(url, {'title': 'New title', 'text': 'New content'})
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_create_post_accepts_form_data(self):
+        self.client.force_authenticate(user=self.user)
+
+        url = reverse('api_post_list')
+        response = self.client.post(
+            url,
+            urlencode({'title': 'Form title', 'text': 'Form content'}),
+            content_type='application/x-www-form-urlencoded',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['title'], 'Form title')
+
+    def test_create_post_accepts_multipart_requests(self):
+        self.client.force_authenticate(user=self.user)
+
+        url = reverse('api_post_list')
+        response = self.client.post(
+            url,
+            {'title': 'Multipart title', 'text': 'Multipart content'},
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['title'], 'Multipart title')
+
+    def test_create_post_accepts_raw_text_data(self):
+        self.client.force_authenticate(user=self.user)
+
+        url = reverse('api_post_list')
+        response = self.client.post(
+            url,
+            '{"title": "Raw title", "text": "Raw content"}',
+            content_type='text/plain',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['title'], 'Raw title')
+
+    def test_create_post_accepts_ids_and_returns_nested_relationships(self):
+        self.client.force_authenticate(user=self.user)
+
+        category = Category.objects.create(name='Technology', slug='technology')
+        tag_one = Tag.objects.create(name='Python', slug='python')
+        tag_two = Tag.objects.create(name='Django', slug='django')
+
+        response = self.client.post(
+            reverse('api_post_list'),
+            {
+                'title': 'Nested relationships',
+                'text': 'Content with ids',
+                'category': category.pk,
+                'tags': [tag_one.pk, tag_two.pk],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['category']['name'], 'Technology')
+        self.assertEqual(response.data['category']['slug'], 'technology')
+        self.assertEqual(response.data['tags'][0]['name'], 'Python')
+        self.assertEqual(response.data['tags'][1]['name'], 'Django')
+
+    def test_search_posts_by_title(self):
+        Post.objects.create(
+            author=self.user,
+            title='Searchable title',
+            text='Some unique content',
+            published_date=timezone.now(),
+        )
+
+        url = reverse('api_post_list') + '?search=Searchable'
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['title'], 'Searchable title')
+
+    def test_search_posts_by_text(self):
+        url = reverse('api_post_list') + '?search=Initial+content'
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['id'], self.post.id)
+
+    def test_filter_posts_by_author(self):
+        second_user = get_user_model().objects.create_user(
+            username='seconduser',
+            password='strong-pass-123',
+        )
+        Post.objects.create(
+            author=second_user,
+            title='Another title',
+            text='Another content',
+            published_date=timezone.now(),
+        )
+
+        response = self.client.get(reverse('api_post_list') + '?author=seconduser')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['title'], 'Another title')
+
+    def test_filter_posts_by_slug(self):
+        Post.objects.create(
+            author=self.user,
+            title='Slug test',
+            text='Slug content',
+            slug='my-post',
+            published_date=timezone.now(),
+        )
+
+        response = self.client.get(reverse('api_post_list') + '?slug=my-post')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['slug'], 'my-post')
+
+    def test_id_filter_redirects_to_post_detail(self):
+        response = self.client.get(reverse('api_post_list') + '?filter_type=id&filter_value=1')
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse('api_post_detail', kwargs={'pk': 1}))
+
+    def test_search_filter_type_redirects(self):
+        response = self.client.get(reverse('api_post_list') + '?filter_type=search&filter_value=Initial')
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse('api_post_list') + '?search=Initial')
+
+    def test_api_does_not_expose_photo_fields(self):
+        response = self.client.get(reverse('api_post_list'))
+
+        self.assertNotIn('image', response.data[0])
+        self.assertNotIn('thumbnail_img', response.data[0])
+
+    def test_put_update_post(self):
+        self.client.force_authenticate(user=self.user)
+
+        put_url = reverse('api_post_detail', kwargs={'pk': self.post.pk})
+        put_response = self.client.put(
+            put_url,
+            {'title': 'Updated by PUT', 'text': 'Updated content'},
+            format='json',
+        )
+
+        self.assertEqual(put_response.status_code, 200)
+        self.assertEqual(put_response.data['title'], 'Updated by PUT')
+
+    def test_partial_update_and_delete_post(self):
+        self.client.force_authenticate(user=self.user)
+
+        patch_url = reverse('api_post_detail', kwargs={'pk': self.post.pk})
+        patch_response = self.client.patch(
+            patch_url,
+            {'title': 'Updated title'},
+            format='json',
+        )
+
+        self.assertEqual(patch_response.status_code, 200)
+        self.assertEqual(patch_response.data['title'], 'Updated title')
+
+        delete_response = self.client.delete(patch_url)
+        self.assertEqual(delete_response.status_code, 204)
+        self.assertFalse(Post.objects.filter(pk=self.post.pk).exists())
