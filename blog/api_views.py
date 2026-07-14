@@ -5,12 +5,13 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
 from .models import Post
 from .serializers import PostSerializer
-
+from .pagination import PostPagination
 
 class PostViewSet(viewsets.ModelViewSet):
     parser_classes = [JSONParser, FormParser, MultiPartParser]
     queryset = Post.objects.all().order_by('-created_date')
     serializer_class = PostSerializer
+    pagination_class = PostPagination
     permission_classes = [IsAuthenticatedOrReadOnly]
     lookup_field = 'slug'
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]

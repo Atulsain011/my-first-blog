@@ -1,4 +1,4 @@
-#!/home/atul/Desktop/office/16.06.2026/restapi/.venv/bin/python3.12
+#!/home/atul/Desktop/office/16.06.2026/restapi/.venv/bin/python
 import sys
 from django.core.management import execute_from_command_line
 if __name__ == '__main__':

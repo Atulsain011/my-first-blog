@@ -27,7 +27,7 @@
 
         // Build API query URL params
         const apiParams = new URLSearchParams();
-
+        apiParams.set('page_size', '100');
         // 1. Check path-based filters
         if (path.includes('/category/')) {
             const parts = path.split('/category/');
@@ -79,7 +79,8 @@
         try {
             const response = await fetch(apiUrl);
             if (!response.ok) throw new Error('Failed to fetch posts');
-            const posts = await response.json();
+            const data = await response.json();
+            const posts = data.results || data;
 
             postsContainer.innerHTML = '';
 
@@ -90,7 +91,7 @@
                 postsContainer.appendChild(filterEl);
             }
 
-            if (posts.length === 0) {
+            if (!posts || posts.length === 0) {
                 postsContainer.innerHTML += `<p>No blogs found${filterText ? ' for ' + filterText : ''}.</p>`;
                 return;
             }
