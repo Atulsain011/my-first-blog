@@ -45,6 +45,7 @@ class PostSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Post
+        lookup_field = 'slug'
         fields = [
             'id',
             'author',

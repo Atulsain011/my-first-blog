@@ -1,105 +1,69 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from django.utils import timezone
 from django.contrib.auth.decorators import login_required
-from django.db.models import Q
 
-from .models import Post, Comment, Category, Tag
+from .models import Post, Comment
 from .forms import PostForm, CommentForm
 
 
-# List of posts
+# ─── Post List ───────────────────────────────────────────────────────────────
+# Just renders the template.
+# All posts are loaded by JavaScript via fetch('/api/posts/') in post_list.html.
 def post_list(request):
-    posts = Post.objects.filter(published_date__lte=timezone.now()).order_by('-published_date')
-    search = request.GET.get('search', '').strip()
-
-    if search:
-        posts = posts.filter(
-            Q(title__icontains=search) |
-            Q(text__icontains=search) |
-            Q(author__username__icontains=search) |
-            Q(category__name__icontains=search) |
-            Q(tags__name__icontains=search)
-        ).distinct()
-
-    return render(request, 'blog/post_list.html', {
-        'posts': posts,
-        'search': search,
-    })
+    return render(request, 'blog/post_list.html')
 
 
-# Post detail
+# ─── Post Detail ─────────────────────────────────────────────────────────────
+# Looks up the post only to get its ID and slug for the template's data-* attrs.
+# Actual post content (title, text, category, tags, comments, image)
+# is fetched by JavaScript via GET /api/posts/<id>/ in post_detail.html.
 def post_detail(request, slug):
     post = get_object_or_404(Post, slug=slug)
-    comments = post.comments.filter(parent=None).order_by('-created_date')
-    return render(request, 'blog/post_detail.html', {
-        'post': post,
-        'form': CommentForm(),
-        'comments': comments,
-    })
+    return render(request, 'blog/post_detail.html', {'post': post})
 
 
-# Create new post
+# ─── Create Post ─────────────────────────────────────────────────────────────
+# Only renders the form.
+# Form submission is handled by JavaScript via POST /api/posts/ in post_edit.html.
 @login_required
 def post_new(request):
-    if request.method == "POST":
-        form = PostForm(request.POST, request.FILES)
-        if form.is_valid():
-            post = form.save(commit=False)
-            post.author = request.user
-            post.published_date = timezone.now()
-            post.save()
-            form.save_m2m()
-            return redirect('post_detail', slug=post.slug)
-    else:
-        form = PostForm()
+    form = PostForm()
     return render(request, 'blog/post_edit.html', {'form': form})
 
 
-# Edit existing post
+# ─── Edit Post ───────────────────────────────────────────────────────────────
+# Looks up the post only to pass its ID to the template's data-* attributes.
+# Form submission is handled by JavaScript via PATCH /api/posts/<id>/ in post_edit.html.
 @login_required
 def post_edit(request, slug):
     post = get_object_or_404(Post, slug=slug)
-    if request.method == "POST":
-        form = PostForm(request.POST, request.FILES, instance=post)
-        if form.is_valid():
-            post = form.save(commit=False)
-            post.author = request.user
-            post.published_date = timezone.now()
-            post.save()
-            form.save_m2m()
-            return redirect('post_detail', slug=post.slug)
-    else:
-        form = PostForm(instance=post)
-    return render(request, 'blog/post_edit.html', {'form': form})
+    form = PostForm(instance=post)
+    return render(request, 'blog/post_edit.html', {'form': form, 'post': post})
 
 
+# ─── Category Posts ──────────────────────────────────────────────────────────
+# Just renders the template.
+# JavaScript in post_list.html detects /category/<slug>/ in the URL and calls
+# fetch('/api/posts/?category=<slug>') automatically.
 def category_posts(request, slug):
-    category = get_object_or_404(Category, slug=slug)
-    posts = Post.objects.filter(category=category)
-
-    return render(
-        request,
-        "blog/post_list.html",
-        {"posts": posts}
-    )
+    return render(request, 'blog/post_list.html')
 
 
+# ─── Tag Posts ───────────────────────────────────────────────────────────────
+# Just renders the template.
+# JavaScript in post_list.html detects /tag/<slug>/ in the URL and calls
+# fetch('/api/posts/?tag=<slug>') automatically.
 def tag_posts(request, slug):
-    tag = get_object_or_404(Tag, slug=slug)
-    posts = Post.objects.filter(tags=tag)
-
-    return render(
-        request,
-        "blog/post_list.html",
-        {"posts": posts}
-    )
+    return render(request, 'blog/post_list.html')
 
 
+# ─── Add Comment ─────────────────────────────────────────────────────────────
+# Comments still use the normal Django route (no REST API for comments yet).
+# Saves the comment to the database and redirects back to the post.
 @login_required
 def add_comment(request, slug):
     post = get_object_or_404(Post, slug=slug)
 
-    if request.method == "POST":
+    if request.method == 'POST':
         form = CommentForm(request.POST)
 
         if form.is_valid():
@@ -107,11 +71,11 @@ def add_comment(request, slug):
             comment.post = post
             comment.author = request.user
             comment.save()
-            parent_id = request.POST.get("parent_id")
 
+            parent_id = request.POST.get('parent_id')
             if parent_id:
-                comment.parent = get_object_or_404(Comment, id=parent_id)
-
-            comment.save()
+                parent = get_object_or_404(Comment, id=parent_id)
+                comment.parent = parent
+                comment.save()
 
     return redirect('post_detail', slug=post.slug)

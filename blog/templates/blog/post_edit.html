@@ -8,7 +8,7 @@
 
     <form method="POST" class="post-form" enctype="multipart/form-data" id="post-edit-form"
           data-is-edit="{% if form.instance.pk %}true{% else %}false{% endif %}"
-          data-post-id="{% if form.instance.pk %}{{ form.instance.pk }}{% endif %}">
+          data-post-slug="{% if form.instance.pk %}{{ form.instance.slug }}{% endif %}">
         {% csrf_token %}
 
         {{ form.as_p }}
@@ -34,13 +34,13 @@
                 submitBtn.textContent = 'Saving...';
 
                 const isEdit = form.getAttribute('data-is-edit') === 'true';
-                const postId = form.getAttribute('data-post-id');
+                const postSlug = form.getAttribute('data-post-slug');
                 
                 let url = '/api/posts/';
                 let method = 'POST';
 
-                if (isEdit && postId) {
-                    url = `/api/posts/${postId}/`;
+                if (isEdit && postSlug) {
+                    url = `/api/posts/${postSlug}/`;
                     method = 'PATCH'; // Use PATCH for partial update (cleaner with form-data)
                 }
 

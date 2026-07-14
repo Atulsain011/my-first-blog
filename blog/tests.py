@@ -20,13 +20,6 @@ class PostAPITests(APITestCase):
             published_date=timezone.now(),
         )
 
-    def test_api_root_lists_blog_endpoints(self):
-        response = self.client.get(reverse('api_root'))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.data['posts'].endswith('/api/posts/'))
-        self.assertIn('search', response.data['filters'])
-
     def test_list_posts(self):
         url = reverse('api_post_list')
         response = self.client.get(url)
@@ -71,19 +64,6 @@ class PostAPITests(APITestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['title'], 'Multipart title')
-
-    def test_create_post_accepts_raw_text_data(self):
-        self.client.force_authenticate(user=self.user)
-
-        url = reverse('api_post_list')
-        response = self.client.post(
-            url,
-            '{"title": "Raw title", "text": "Raw content"}',
-            content_type='text/plain',
-        )
-
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['title'], 'Raw title')
 
     def test_create_post_accepts_ids_and_returns_nested_relationships(self):
         self.client.force_authenticate(user=self.user)
@@ -132,6 +112,43 @@ class PostAPITests(APITestCase):
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]['id'], self.post.id)
 
+    def test_search_posts_by_extended_fields(self):
+        category = Category.objects.create(name='Gadgets', slug='gadgets')
+        tag = Tag.objects.create(name='Gaming', slug='gaming')
+        second_user = get_user_model().objects.create_user(
+            username='arjun',
+            password='strong-pass-123',
+        )
+        post = Post.objects.create(
+            author=second_user,
+            title='Tech News',
+            text='Some interesting content',
+            category=category,
+            published_date=timezone.now(),
+        )
+        post.tags.add(tag)
+
+        # Search by author username
+        url = reverse('api_post_list') + '?search=arjun'
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['title'], 'Tech News')
+
+        # Search by category name
+        url = reverse('api_post_list') + '?search=Gadgets'
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['title'], 'Tech News')
+
+        # Search by tag name
+        url = reverse('api_post_list') + '?search=Gaming'
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['title'], 'Tech News')
+
     def test_filter_posts_by_author(self):
         second_user = get_user_model().objects.create_user(
             username='seconduser',
@@ -165,17 +182,25 @@ class PostAPITests(APITestCase):
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]['slug'], 'my-post')
 
-    def test_id_filter_redirects_to_post_detail(self):
-        response = self.client.get(reverse('api_post_list') + '?filter_type=id&filter_value=1')
+    def test_filter_posts_by_multiple_parameters(self):
+        category = Category.objects.create(name='Tech', slug='tech')
+        Post.objects.create(
+            author=self.user,
+            title='Multi filter match',
+            text='Matching content',
+            category=category,
+            published_date=timezone.now(),
+        )
+        url_non_matching = reverse('api_post_list') + '?category=tech&author=nonexistent'
+        response_none = self.client.get(url_non_matching)
+        self.assertEqual(response_none.status_code, 200)
+        self.assertEqual(len(response_none.data), 0)
 
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.url, reverse('api_post_detail', kwargs={'pk': 1}))
-
-    def test_search_filter_type_redirects(self):
-        response = self.client.get(reverse('api_post_list') + '?filter_type=search&filter_value=Initial')
-
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.url, reverse('api_post_list') + '?search=Initial')
+        url_matching = reverse('api_post_list') + f'?category=tech&author={self.user.username}'
+        response_one = self.client.get(url_matching)
+        self.assertEqual(response_one.status_code, 200)
+        self.assertEqual(len(response_one.data), 1)
+        self.assertEqual(response_one.data[0]['title'], 'Multi filter match')
 
     def test_api_does_not_expose_photo_fields(self):
         response = self.client.get(reverse('api_post_list'))
@@ -186,7 +211,7 @@ class PostAPITests(APITestCase):
     def test_put_update_post(self):
         self.client.force_authenticate(user=self.user)
 
-        put_url = reverse('api_post_detail', kwargs={'pk': self.post.pk})
+        put_url = reverse('api_post_detail', kwargs={'slug': self.post.slug})
         put_response = self.client.put(
             put_url,
             {'title': 'Updated by PUT', 'text': 'Updated content'},
@@ -199,7 +224,7 @@ class PostAPITests(APITestCase):
     def test_partial_update_and_delete_post(self):
         self.client.force_authenticate(user=self.user)
 
-        patch_url = reverse('api_post_detail', kwargs={'pk': self.post.pk})
+        patch_url = reverse('api_post_detail', kwargs={'slug': self.post.slug})
         patch_response = self.client.patch(
             patch_url,
             {'title': 'Updated title'},
