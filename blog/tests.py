@@ -20,13 +20,19 @@ class PostAPITests(APITestCase):
             published_date=timezone.now(),
         )
 
+    def _get_posts(self, response):
+        if isinstance(response.data, dict) and 'results' in response.data:
+            return response.data['results']
+        return response.data
+
     def test_list_posts(self):
         url = reverse('api_post_list')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['title'], 'Initial title')
+        posts = self._get_posts(response)
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0]['title'], 'Initial title')
 
     def test_list_posts_html(self):
         url = reverse('api_post_list')
@@ -37,7 +43,7 @@ class PostAPITests(APITestCase):
         url = reverse('api_post_list')
         response = self.client.post(url, {'title': 'New title', 'text': 'New content'})
 
-        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.status_code, 403)
 
     def test_create_post_accepts_form_data(self):
         self.client.force_authenticate(user=self.user)
@@ -101,16 +107,36 @@ class PostAPITests(APITestCase):
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['title'], 'Searchable title')
+        posts = self._get_posts(response)
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0]['title'], 'Searchable title')
 
     def test_search_posts_by_text(self):
         url = reverse('api_post_list') + '?search=Initial+content'
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['id'], self.post.id)
+        posts = self._get_posts(response)
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0]['id'], self.post.id)
+
+    def test_search_posts_phrase_matching(self):
+        # Create a post containing "the" and "man" but not "the man" as a phrase
+        Post.objects.create(
+            author=self.user,
+            title='Another post with the and man',
+            text='He is a romantic person in the town of Manjeri',
+            published_date=timezone.now(),
+        )
+
+        # Search for "the man" as a phrase
+        url = reverse('api_post_list') + '?search=the+man'
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        posts = self._get_posts(response)
+        # It should not match the new post since it doesn't contain the exact phrase "the man"
+        for post in posts:
+            self.assertNotEqual(post['title'], 'Another post with the and man')
 
     def test_search_posts_by_extended_fields(self):
         category = Category.objects.create(name='Gadgets', slug='gadgets')
@@ -132,22 +158,25 @@ class PostAPITests(APITestCase):
         url = reverse('api_post_list') + '?search=arjun'
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['title'], 'Tech News')
+        posts = self._get_posts(response)
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0]['title'], 'Tech News')
 
         # Search by category name
         url = reverse('api_post_list') + '?search=Gadgets'
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['title'], 'Tech News')
+        posts = self._get_posts(response)
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0]['title'], 'Tech News')
 
         # Search by tag name
         url = reverse('api_post_list') + '?search=Gaming'
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['title'], 'Tech News')
+        posts = self._get_posts(response)
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0]['title'], 'Tech News')
 
     def test_filter_posts_by_author(self):
         second_user = get_user_model().objects.create_user(
@@ -164,8 +193,9 @@ class PostAPITests(APITestCase):
         response = self.client.get(reverse('api_post_list') + '?author=seconduser')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['title'], 'Another title')
+        posts = self._get_posts(response)
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0]['title'], 'Another title')
 
     def test_filter_posts_by_slug(self):
         Post.objects.create(
@@ -179,8 +209,9 @@ class PostAPITests(APITestCase):
         response = self.client.get(reverse('api_post_list') + '?slug=my-post')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['slug'], 'my-post')
+        posts = self._get_posts(response)
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0]['slug'], 'my-post')
 
     def test_filter_posts_by_multiple_parameters(self):
         category = Category.objects.create(name='Tech', slug='tech')
@@ -194,19 +225,51 @@ class PostAPITests(APITestCase):
         url_non_matching = reverse('api_post_list') + '?category=tech&author=nonexistent'
         response_none = self.client.get(url_non_matching)
         self.assertEqual(response_none.status_code, 200)
-        self.assertEqual(len(response_none.data), 0)
+        posts_none = self._get_posts(response_none)
+        self.assertEqual(len(posts_none), 0)
 
         url_matching = reverse('api_post_list') + f'?category=tech&author={self.user.username}'
         response_one = self.client.get(url_matching)
         self.assertEqual(response_one.status_code, 200)
-        self.assertEqual(len(response_one.data), 1)
-        self.assertEqual(response_one.data[0]['title'], 'Multi filter match')
+        posts_one = self._get_posts(response_one)
+        self.assertEqual(len(posts_one), 1)
+        self.assertEqual(posts_one[0]['title'], 'Multi filter match')
+
+    def test_filter_posts_by_tag_normalization(self):
+        tag = Tag.objects.create(name='Taj Mahal', slug='taj-mahal')
+        post = Post.objects.create(
+            author=self.user,
+            title='Taj Mahal Visit',
+            text='Amazing trip',
+            published_date=timezone.now(),
+        )
+        post.tags.add(tag)
+
+        # Test tags=tajmahal
+        response = self.client.get(reverse('api_post_list') + '?tags=tajmahal')
+        self.assertEqual(response.status_code, 200)
+        posts = self._get_posts(response)
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0]['title'], 'Taj Mahal Visit')
+
+        # Test tags=taj+mahal
+        response = self.client.get(reverse('api_post_list') + '?tags=taj mahal')
+        self.assertEqual(response.status_code, 200)
+        posts = self._get_posts(response)
+        self.assertEqual(len(posts), 1)
+
+        # Test tag=tajmahal
+        response = self.client.get(reverse('api_post_list') + '?tag=tajmahal')
+        self.assertEqual(response.status_code, 200)
+        posts = self._get_posts(response)
+        self.assertEqual(len(posts), 1)
 
     def test_api_does_not_expose_photo_fields(self):
         response = self.client.get(reverse('api_post_list'))
+        posts = self._get_posts(response)
 
-        self.assertNotIn('image', response.data[0])
-        self.assertNotIn('thumbnail_img', response.data[0])
+        self.assertNotIn('image', posts[0])
+        self.assertNotIn('thumbnail_img', posts[0])
 
     def test_put_update_post(self):
         self.client.force_authenticate(user=self.user)

@@ -1,25 +1,46 @@
 {% extends 'blog/base.html' %}
-{% block content %}
-<form method="get" action="/blog/" class="mb-4" role="search">
-    <div class="input-group">
-        <input type="search" name="search" class="form-control"
-            placeholder="Search blogs by title, text, author, category or tag" aria-label="Search blogs">
-        <button class="btn btn-primary" type="submit">Search</button>
-        <a class="btn btn-outline-secondary" id="search-clear-btn" href="{% url 'post_list' %}"
-            style="display: none;">Clear</a>
-    </div>
-</form>
 
+{% block title %}Latest Articles | Atul Blogs{% endblock %}
+
+{% block content %}
+<!-- Search & Filter Bar -->
+<div class="search-card mb-4">
+    <form method="get" action="/blog/" role="search">
+        <div class="input-group search-input-group">
+            <input type="search" name="search" class="form-control"
+                placeholder="Search articles by title, content, author, category, or tag..." aria-label="Search articles">
+            <button class="btn btn-primary" type="submit">
+                🔍 Search
+            </button>
+            <a class="btn btn-outline-secondary d-flex align-items-center ms-2" id="search-clear-btn" href="{% url 'post_list' %}"
+                style="display: none; border-radius: 8px;">Clear Filter</a>
+        </div>
+    </form>
+</div>
+
+<!-- Posts Feed Container -->
 <div id="posts-container">
-    <p class="text-muted">Loading blogs...</p>
+    <div class="text-center py-5 text-muted">
+        <div class="spinner-border text-primary mb-3" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p>Fetching articles...</p>
+    </div>
 </div>
 
 <script>
     const searchForm = document.querySelector('form[role="search"]');
+
     async function loadPosts() {
         const postsContainer = document.getElementById('posts-container');
         const clearBtn = document.getElementById('search-clear-btn');
-        postsContainer.innerHTML = '<p class="text-muted">Loading blogs...</p>';
+        postsContainer.innerHTML = `
+            <div class="text-center py-5 text-muted">
+                <div class="spinner-border text-primary mb-3" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p>Fetching articles...</p>
+            </div>`;
 
         const path = window.location.pathname;
         const params = new URLSearchParams(window.location.search);
@@ -28,7 +49,7 @@
         // Build API query URL params
         const apiParams = new URLSearchParams();
         apiParams.set('page_size', '100');
-        // 1. Check path-based filters
+
         if (path.includes('/category/')) {
             const parts = path.split('/category/');
             const slug = parts[1].replace('/', '');
@@ -39,8 +60,7 @@
             apiParams.set('tag', slug);
         }
 
-        // 2. Add or override with query parameters from the URL
-        const filterKeys = ['search', 'category', 'author', 'tag', 'slug'];
+        const filterKeys = ['search', 'category', 'author', 'tag', 'tags', 'slug'];
         filterKeys.forEach(key => {
             if (params.has(key)) {
                 const val = params.get(key).trim();
@@ -50,27 +70,25 @@
             }
         });
 
-        // Build API URL
         const queryString = apiParams.toString();
         const apiUrl = queryString ? `/api/posts/?${queryString}` : '/api/posts/';
 
-        // Build user-friendly filter description text
         const filters = [];
-        if (apiParams.has('category')) filters.push(`Category: ${apiParams.get('category')}`);
-        if (apiParams.has('tag')) filters.push(`Tag: ${apiParams.get('tag')}`);
-        if (apiParams.has('author')) filters.push(`Author: ${apiParams.get('author')}`);
+        if (apiParams.has('category')) filters.push(`Category: "${apiParams.get('category')}"`);
+        if (apiParams.has('tag')) filters.push(`Tag: "${apiParams.get('tag')}"`);
+        if (apiParams.has('tags')) filters.push(`Tag: "${apiParams.get('tags')}"`);
+        if (apiParams.has('author')) filters.push(`Author: "${apiParams.get('author')}"`);
         if (apiParams.has('search')) filters.push(`Search: "${apiParams.get('search')}"`);
-        if (apiParams.has('slug')) filters.push(`Slug: ${apiParams.get('slug')}`);
+        if (apiParams.has('slug')) filters.push(`Slug: "${apiParams.get('slug')}"`);
 
         const filterText = filters.join(', ');
 
         if (clearBtn) {
             const hasQueryFilters = filterKeys.some(key => params.has(key) && params.get(key).trim());
             const hasPathFilters = path.includes('/category/') || path.includes('/tag/');
-            clearBtn.style.display = (hasQueryFilters || hasPathFilters) ? 'inline-block' : 'none';
+            clearBtn.style.display = (hasQueryFilters || hasPathFilters) ? 'inline-flex' : 'none';
         }
 
-        // Pre-fill search input if search value exists
         const searchInput = document.querySelector('input[name="search"]');
         if (searchInput) {
             searchInput.value = searchVal;
@@ -85,14 +103,18 @@
             postsContainer.innerHTML = '';
 
             if (filterText) {
-                const filterEl = document.createElement('h3');
-                filterEl.className = 'mb-4';
-                filterEl.textContent = `Showing posts for ${filterText}`;
+                const filterEl = document.createElement('h5');
+                filterEl.className = 'mb-4 text-secondary font-weight-bold';
+                filterEl.textContent = `Showing results for ${filterText}`;
                 postsContainer.appendChild(filterEl);
             }
 
             if (!posts || posts.length === 0) {
-                postsContainer.innerHTML += `<p>No blogs found${filterText ? ' for ' + filterText : ''}.</p>`;
+                postsContainer.innerHTML += `
+                    <div class="card p-5 text-center border-0 shadow-sm rounded-4">
+                        <h4 class="text-muted mb-2">No articles found</h4>
+                        <p class="text-secondary mb-0">Try clearing your filters or searching for something else.</p>
+                    </div>`;
                 return;
             }
 
@@ -100,90 +122,75 @@
                 const article = document.createElement('article');
                 article.className = 'post';
 
-                // Published date format
                 let dateStr = '';
                 if (post.published_date) {
                     const date = new Date(post.published_date);
-                    dateStr = date.toLocaleString();
+                    dateStr = date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
                 }
 
-                // Category HTML
                 let categoryHtml = '';
                 if (post.category) {
-                    categoryHtml = `
-                                <p>
-                                    <strong>Category:</strong> 
-                                    <a href="/blog/category/${post.category.slug}/">${post.category.name}</a>
-                                </p>
-                            `;
+                    categoryHtml = `<a href="/blog/category/${post.category.slug}/" class="category-pill">${post.category.name}</a>`;
                 }
 
-                // Tags HTML
                 let tagsHtml = '';
                 if (post.tags && post.tags.length > 0) {
                     const tagsList = post.tags.map(tag => `
-                                <span>
-                                    <a href="/blog/tag/${tag.slug}/" class="Tags">${tag.name}</a>
-                                </span>
-                            `).join(' ');
-                    tagsHtml = `
-                                <p>
-                                    <strong>Tags:</strong>
-                                    ${tagsList}
-                                </p>
-                            `;
+                        <a href="/blog/tag/${tag.slug}/" class="Tags">#${tag.name}</a>
+                    `).join('');
+                    tagsHtml = `<div class="mt-2">${tagsList}</div>`;
                 }
 
-                // Image HTML
                 let imageHtml = '';
                 if (post.thumbnail_url) {
-                    imageHtml = `<img src="${post.thumbnail_url}" width="50" style="border-radius: 10px; margin-bottom: 15px; display: block;">`;
+                    imageHtml = `<img src="${post.thumbnail_url}" class="post-thumbnail-img" alt="${post.title}">`;
                 }
 
-                // Format body text with line breaks
-                const formattedText = post.text ? post.text.replace(/\n/g, '<br>') : '';
+                const formattedText = post.text ? (post.text.length > 280 ? post.text.substring(0, 280) + '...' : post.text).replace(/\n/g, '<br>') : '';
 
                 article.innerHTML = `
-                            <time class="date">
-                                ${dateStr}
-                            </time>
-                            <h2><a class="break" href="/blog/${post.slug}/">
-                                ${post.title}
-                            </a></h2>
-                            <p>By ${post.author}</p>
-                            ${categoryHtml}
-                            ${tagsHtml}
-                            ${imageHtml}
-                            <p class="break">${formattedText}</p>
-                        `;
+                    <div class="post-header-meta">
+                        <div>${categoryHtml}</div>
+                        <time class="date">📅 ${dateStr}</time>
+                    </div>
+                    <h2>
+                        <a class="break" href="/blog/${post.slug}/">${post.title}</a>
+                    </h2>
+                    <div class="post-author">By <span>${post.author}</span></div>
+                    ${imageHtml}
+                    <p class="post-excerpt break">${formattedText}</p>
+                    ${tagsHtml}
+                    <div class="mt-3 pt-3 border-top d-flex justify-content-between align-items-center">
+                        <a href="/blog/${post.slug}/" class="btn btn-sm btn-outline-primary fw-semibold px-3 rounded-pill">Read Full Article &rarr;</a>
+                    </div>
+                `;
                 postsContainer.appendChild(article);
             });
         } catch (err) {
             console.error(err);
-            postsContainer.innerHTML = '<p class="text-danger">Error loading posts. Please try again.</p>';
+            postsContainer.innerHTML = '<div class="alert alert-danger">Error loading articles. Please refresh or try again later.</div>';
         }
     }
-    // Load posts from REST API when the page loads
+
     document.addEventListener('DOMContentLoaded', () => {
         loadPosts();
     });
 
     if (searchForm) {
-    searchForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const formData = new FormData(searchForm);
-        const searchVal = formData.get('search').trim();
+        searchForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const formData = new FormData(searchForm);
+            const searchVal = formData.get('search').trim();
 
-        const newUrl = new URL(window.location.href);
-        if (searchVal) {
-            newUrl.searchParams.set('search', searchVal);
-        } else {
-            newUrl.searchParams.delete('search');
-        }
-        window.history.pushState({}, '', newUrl);
-        loadPosts();
-    });
-}
-
+            const newUrl = new URL(window.location.href);
+            if (searchVal) {
+                newUrl.searchParams.set('search', searchVal);
+            } else {
+                newUrl.searchParams.delete('search');
+            }
+            window.history.pushState({}, '', newUrl);
+            loadPosts();
+        });
+    }
 </script>
 {% endblock %}

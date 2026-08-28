@@ -37,4 +37,4 @@ class Choice(models.Model):
         return self.choice_text
 
     def get_absolute_url(self):
-        return reverse("detail" , kwargs={"slug": self.slug}) 
+        return reverse("polls:detail" , kwargs={"slug": self.question.slug}) 

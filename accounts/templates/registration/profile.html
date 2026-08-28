@@ -1,46 +1,75 @@
 {% extends "blog/base.html" %}
 
+{% block title %}{{ user.username }}'s Profile | Atul Blogs{% endblock %}
+
 {% block content %}
-<h1>Profile</h1>
+<div class="profile-card">
+    <div class="d-flex align-items-center flex-wrap gap-4 mb-4 pb-4 border-bottom">
+        {% if user.image %}
+            <img src="{{ user.image.url }}" alt="{{ user.username }}" class="profile-avatar-large">
+        {% else %}
+            <div class="profile-avatar-large bg-primary text-white d-flex align-items-center justify-content-center fs-1 font-weight-bold">
+                {{ user.username|slice:":1"|upper }}
+            </div>
+        {% endif %}
+        <div>
+            <h2 class="fw-bold mb-1">{{ user.username }}</h2>
+            <p class="text-muted mb-2">📧 {{ user.email|default:"No email provided" }}</p>
+            <a href="{% url 'profile_edit' %}" class="btn btn-sm btn-outline-primary rounded-pill px-3 fw-semibold">
+                ✏️ Edit Profile
+            </a>
+        </div>
+    </div>
 
-{% if user.image %}
+    <h4 class="fw-bold mb-3">Personal Information</h4>
+    <div class="profile-info-grid">
+        <div class="info-item">
+            <label>About Bio</label>
+            <span>{{ user.about|default:"Not specified" }}</span>
+        </div>
+        <div class="info-item">
+            <label>Date of Birth</label>
+            <span>{{ user.birth_date|default:"Not specified" }}</span>
+        </div>
+        <div class="info-item">
+            <label>Current Location</label>
+            <span>{{ user.location|default:"Not specified" }}</span>
+        </div>
+        <div class="info-item">
+            <label>Permanent Address</label>
+            <span>{{ user.permanent|default:"Not specified" }}</span>
+        </div>
+        <div class="info-item">
+            <label>Phone Number</label>
+            <span>{{ user.pno|default:"Not specified" }}</span>
+        </div>
+        <div class="info-item">
+            <label>Qualification</label>
+            <span>{{ user.qualification|default:"Not specified" }}</span>
+        </div>
+        <div class="info-item">
+            <label>Gender</label>
+            <span>{{ user.gender|default:"Not specified" }}</span>
+        </div>
+    </div>
 
-<div style="margin-bottom:20px;">
-    <img src="{{ user.image.url }}"
-         width="150"
-         height="150"
-         style="
-            border-radius:10px;
-            object-fit:cover;
-            border:2px solid #ddd;
-         ">
-{% endif %}
+    <hr class="my-4">
 
-<h3>{{ user.username }}</h3>
-
-<p>Username: {{ user.username }}</p>
-<p>Email: {{ user.email }}</p>
-<p>About: {{ user.about }}</p>
-<p>Date of Birth: {{ user.birth_date }}</p>
-<p>Current Location: {{ user.location }}</p>
-<p>Permanent Address: {{ user.permanent }}</p>
-<p>Phone no: {{ user.pno }}</p>
-<p>Qualification: {{ user.qualification }}</p>
-<p>Gender: {{ user.gender }}</p>
-<a href="{% url 'profile_edit' %}"> Edit Profile </a>
-<h3>My Posts</h3>
-
-{% if my_posts %}
-    <ul>
-        {% for post in my_posts %}
-            <li>
-                <a class="break" href="{% url 'post_detail' slug=post.slug %}">
-                    {{ post.title }}
+    <h4 class="fw-bold mb-3">Authored Articles ({{ my_posts|length }})</h4>
+    {% if my_posts %}
+        <div class="list-group list-group-flush rounded-3 border">
+            {% for post in my_posts %}
+                <a href="{% url 'post_detail' slug=post.slug %}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center p-3">
+                    <span class="fw-semibold text-dark break">{{ post.title }}</span>
+                    <span class="badge bg-light text-muted border">{{ post.created_date|date:"M d, Y" }}</span>
                 </a>
-            </li>
-        {% endfor %}
-    </ul>
-{% else %}
-    <p>No posts uploaded.</p>
-{% endif %}
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-light text-muted border text-center p-4">
+            You haven't published any blog posts yet. 
+            <a href="{% url 'post_new' %}" class="fw-bold text-primary ms-1">Create your first post &rarr;</a>
+        </div>
+    {% endif %}
+</div>
 {% endblock %}
